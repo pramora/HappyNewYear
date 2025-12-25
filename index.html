@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Magical Particles: Pink New Year & Music</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; }
+        
+        #ui-overlay {
+            position: absolute;
+            top: 20px; left: 20px;
+            color: #ffffff;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            max-width: 350px;
+            z-index: 10;
+        }
+        h1 { margin: 0; font-size: 24px; font-weight: 300; letter-spacing: 2px; color: #ff99cc; }
+        #status { margin-top: 10px; font-size: 18px; font-weight: bold; color: #fff;}
+        #instructions { 
+            margin-top: 20px; 
+            font-size: 14px; 
+            color: #ddd; 
+            background: rgba(20, 20, 20, 0.6); 
+            padding: 15px; 
+            border-radius: 12px; 
+            border: 1px solid rgba(255, 105, 180, 0.3);
+            backdrop-filter: blur(4px);
+        }
+        .key-gesture { color: #ff99cc; font-weight: bold;}
+
+        /* TOMBOL MUSIK */
+        .music-control {
+            margin-top: 15px;
+            pointer-events: auto !important; /* Agar bisa diklik */
+        }
+        #btn-music {
+            background: rgba(255, 105, 180, 0.2);
+            border: 1px solid #ff99cc;
+            color: #ff99cc;
+            padding: 10px 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #btn-music:hover {
+            background: #ff99cc;
+            color: #000;
+            box-shadow: 0 0 15px #ff99cc;
+        }
+
+        #video-feed {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 160px; height: 120px;
+            transform: scaleX(-1);
+            border-radius: 10px; opacity: 0.3; border: 2px solid #333;
+            transition: opacity 0.3s, border-color 0.3s;
+            z-index: 5;
+        }
+        #video-feed.active { opacity: 0.9; border-color: #ff99cc; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-overlay">
+        <h1>PRAMORA</h1>
+        <div id="status">Mencari Bintang...</div>
+        
+        <div class="music-control">
+            <button id="btn-music">🎵</button>
+        </div>
+
+        <div id="instructions">
+            <p><b>Tidak ada gestur:</b> Bintang Putih</p>
+            <p><b>gestur ✋ :</b> Bintang Pink</p>
+            <p><b>gestur ✊ :</b> Hati</p>
+            <p><b>gestur ✌️ :</b> Pesan</p>
+
+            <p>  Happy New Year to the person who always</p> 
+            </p> makes my days better. May this year bring</p> 
+            </p> more happiness, laughter, and beautiful </p> 
+            </p> memories for both of us.✨</p> 
+        </div>
+    </div>
+
+    <audio id="bg-music" loop>
+        <source src="lagu-kita.mp3" type="audio/mp3">
+    </audio>
+
+    <video id="video-feed" playsinline webkit-playsinline></video>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- LOGIKA MUSIK ---
+        const btnMusic = document.getElementById('btn-music');
+        const bgMusic = document.getElementById('bg-music');
+        let isPlaying = false;
+
+        btnMusic.addEventListener('click', () => {
+            if (!isPlaying) {
+                bgMusic.play().then(() => {
+                    isPlaying = true;
+                    btnMusic.innerHTML = "⏸ Hentikan Musik";
+                    btnMusic.style.background = "#ff99cc";
+                    btnMusic.style.color = "#000";
+                }).catch(e => {
+                    console.log("Audio play failed (user interaction needed):", e);
+                });
+            } else {
+                bgMusic.pause();
+                isPlaying = false;
+                btnMusic.innerHTML = "🎵 Putar Musik Romantis";
+                btnMusic.style.background = "rgba(255, 105, 180, 0.2)";
+                btnMusic.style.color = "#ff99cc";
+            }
+        });
+
+        // --- KONFIGURASI THREE.JS ---
+        const PARTICLE_COUNT = 20000; 
+        const PARTICLE_SIZE = 0.15;
+        
+        let currentGesture = "idle"; 
+        
+        // Data Titik Teks "HAPPY NEW YEAR SITI"
+        const textPointsData = [
+            // H
+            [0,5],[0,4],[0,3],[0,2],[0,1],[3,5],[3,4],[3,3],[3,2],[3,1],[1,3],[2,3],
+            // A
+            [5,1],[5,2],[5,3],[6,4],[7,5],[8,4],[9,3],[9,2],[9,1],[6,3],[7,3],[8,3],
+            // P
+            [11,1],[11,2],[11,3],[11,4],[11,5],[12,5],[13,5],[14,4],[14,3],[13,2],[12,2],
+            // P
+            [16,1],[16,2],[16,3],[16,4],[16,5],[17,5],[18,5],[19,4],[19,3],[18,2],[17,2],
+            // Y
+            [21,5],[21.5,4],[22,3],[22.5,4],[23,5],[22,2],[22,1],
+            // NEW (N)
+            [0,-2],[0,-3],[0,-4],[0,-5],[0,-6],[1,-3],[2,-4],[3,-5],[4,-2],[4,-3],[4,-4],[4,-5],[4,-6],
+            // (E)
+            [6,-2],[7,-2],[8,-2],[6,-3],[6,-4],[7,-4],[6,-5],[6,-6],[7,-6],[8,-6],
+            // (W)
+            [10,-2],[10,-3],[10,-4],[10,-5],[10,-6],[11,-6],[12,-5],[12,-4],[13,-6],[14,-6],[14,-5],[14,-4],[14,-3],[14,-2],
+            // YEAR (Y)
+            [16,-2],[16.5,-3],[17,-4],[17.5,-3],[18,-2],[17,-5],[17,-6],
+            // (E)
+            [20,-2],[21,-2],[22,-2],[20,-3],[20,-4],[21,-4],[20,-5],[20,-6],[21,-6],[22,-6],
+            // (A)
+            [24,-6],[24,-5],[24,-4],[25,-3],[26,-2],[27,-3],[28,-4],[28,-5],[28,-6],[25,-4],[26,-4],[27,-4],
+            // (R)
+            [30,-6],[30,-5],[30,-4],[30,-3],[30,-2],[31,-2],[32,-2],[33,-3],[33,-4],[32,-5],[31,-5],[32,-6],[33,-7],
+            // SITI (S)
+            [5,-9],[6,-9],[7,-9],[5,-10],[6,-11],[7,-11],[7,-12],[5,-13],[6,-13],[7,-13],
+            // (I)
+            [9,-9],[10,-9],[11,-9],[10,-10],[10,-11],[10,-12],[9,-13],[10,-13],[11,-13],
+            // (T)
+            [13,-9],[14,-9],[15,-9],[14,-10],[14,-11],[14,-12],[14,-13],
+            // (I)
+            [17,-9],[18,-9],[19,-9],[18,-10],[18,-11],[18,-12],[17,-13],[18,-13],[19,-13],
+        ];
+
+        const CONF = {
+            handPosition: new THREE.Vector3(0, 0, 0),
+            handDetected: false
+        };
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.01);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 50; 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const velocities = new Float32Array(PARTICLE_COUNT * 3);
+        const targets = new Float32Array(PARTICLE_COUNT * 3);
+        const initialOffsets = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+        const starRange = 120; 
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            positions[i*3] = (Math.random() - 0.5) * starRange * 2;
+            positions[i*3+1] = (Math.random() - 0.5) * starRange * 1.5;
+            positions[i*3+2] = (Math.random() - 0.5) * 80;
+
+            velocities[i*3] = (Math.random() - 0.5) * 0.1;
+            velocities[i*3+1] = (Math.random() - 0.5) * 0.1;
+            velocities[i*3+2] = (Math.random() - 0.5) * 0.1;
+            
+            initialOffsets[i*3] = (Math.random()-0.5) * 0.5;
+            initialOffsets[i*3+1] = (Math.random()-0.5) * 0.5;
+            initialOffsets[i*3+2] = (Math.random()-0.5) * 2.0;
+
+            colors[i*3] = 1.0; colors[i*3+1] = 1.0; colors[i*3+2] = 1.0;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        
+        const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png');
+        const material = new THREE.PointsMaterial({
+            size: PARTICLE_SIZE,
+            map: sprite,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.9,
+            vertexColors: true
+        });
+
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+
+        function getHeartPoint(index) {
+            const t = (index / PARTICLE_COUNT) * Math.PI * 2;
+            let x = 16 * Math.pow(Math.sin(t), 3);
+            let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+            let z = 0;
+            const thickness = 2.0; 
+            x += (Math.random() - 0.5) * thickness;
+            y += (Math.random() - 0.5) * thickness;
+            z += (Math.random() - 0.5) * thickness;
+            const scale = 0.8; 
+            return { x: x * scale, y: (y * scale) + 8, z: z * scale };
+        }
+
+        function getTextPoint(index, time) {
+             const pointBase = textPointsData[index % textPointsData.length];
+             const scale = 0.8; 
+             const offsetX = 18; 
+             const offsetY = 6; 
+             const waveY = Math.sin(time * 2.0 + pointBase[0]*0.3) * 0.3;
+             const noiseX = initialOffsets[index*3]; 
+             const noiseY = initialOffsets[index*3+1]; 
+             const noiseZ = initialOffsets[index*3+2];
+             return { 
+                 x: (pointBase[0] - offsetX) * scale + noiseX, 
+                 y: (pointBase[1] + offsetY) * scale + waveY + noiseY, 
+                 z: noiseZ 
+             }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const positionAttr = particles.geometry.attributes.position;
+            const colorAttr = particles.geometry.attributes.color;
+            const posArr = positionAttr.array;
+            const colArr = colorAttr.array;
+            const time = Date.now() * 0.001;
+
+            const targetColor = new THREE.Color();
+
+            if (currentGesture === 'idle') {
+                targetColor.setHSL(0.6, 0.0, 1.0); 
+                material.size = 0.2;
+
+                for(let i = 0; i < PARTICLE_COUNT; i++) {
+                    const ix = i*3; const iy = i*3+1; const iz = i*3+2;
+                    posArr[ix] += velocities[ix]; posArr[iy] += velocities[iy]; posArr[iz] += velocities[iz];
+
+                    if (posArr[ix] > starRange) posArr[ix] = -starRange;
+                    if (posArr[ix] < -starRange) posArr[ix] = starRange;
+                    if (posArr[iy] > starRange) posArr[iy] = -starRange;
+                    if (posArr[iy] < -starRange) posArr[iy] = starRange;
+
+                    colArr[ix] += (targetColor.r - colArr[ix]) * 0.05;
+                    colArr[iy] += (targetColor.g - colArr[iy]) * 0.05;
+                    colArr[iz] += (targetColor.b - colArr[iz]) * 0.05;
+                }
+
+            } else if (currentGesture === 'open') {
+                targetColor.setHSL(0.9, 1.0, 0.6); // Pink
+                material.size = 0.2;
+
+                for(let i = 0; i < PARTICLE_COUNT; i++) {
+                    const ix = i*3; const iy = i*3+1; const iz = i*3+2;
+                    posArr[ix] += velocities[ix] * 1.5; posArr[iy] += velocities[iy] * 1.5; posArr[iz] += velocities[iz] * 1.5;
+
+                    if (posArr[ix] > starRange) posArr[ix] = -starRange;
+                    if (posArr[ix] < -starRange) posArr[ix] = starRange;
+                    if (posArr[iy] > starRange) posArr[iy] = -starRange;
+                    if (posArr[iy] < -starRange) posArr[iy] = starRange;
+
+                    colArr[ix] += (targetColor.r - colArr[ix]) * 0.1;
+                    colArr[iy] += (targetColor.g - colArr[iy]) * 0.1;
+                    colArr[iz] += (targetColor.b - colArr[iz]) * 0.1;
+                }
+
+            } else {
+                if (currentGesture === 'heart') targetColor.setHSL(0.0, 1.0, 0.5); 
+                else targetColor.setHSL(0.9, 1.0, 0.6); // PINK TEXT
+
+                material.size = 0.15;
+
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    let p = {x:0, y:0, z:0};
+                    if (currentGesture === 'heart') p = getHeartPoint(i);
+                    else if (currentGesture === 'text') p = getTextPoint(i, time);
+
+                    const tx = p.x + CONF.handPosition.x;
+                    const ty = p.y + CONF.handPosition.y;
+                    const tz = p.z + CONF.handPosition.z;
+
+                    const ix = i*3; const iy = i*3+1; const iz = i*3+2;
+                    const lerpSpeed = 0.1;
+                    posArr[ix] += (tx - posArr[ix]) * lerpSpeed;
+                    posArr[iy] += (ty - posArr[iy]) * lerpSpeed;
+                    posArr[iz] += (tz - posArr[iz]) * lerpSpeed;
+
+                    colArr[ix] += (targetColor.r - colArr[ix]) * 0.1;
+                    colArr[iy] += (targetColor.g - colArr[iy]) * 0.1;
+                    colArr[iz] += (targetColor.b - colArr[iz]) * 0.1;
+                }
+            }
+
+            if(currentGesture === 'idle' || currentGesture === 'open') {
+                particles.rotation.y += 0.0005; particles.rotation.z += 0.0002;
+            } else {
+                particles.rotation.y = Math.sin(time * 0.2) * 0.1; particles.rotation.z = 0;
+            }
+
+            positionAttr.needsUpdate = true; colorAttr.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- MEDIAPIPE LOGIC ---
+        const videoElement = document.getElementById('video-feed');
+        const statusElement = document.getElementById('status');
+
+        function isFingerFolded(lm, tipIdx, pipIdx) {
+            const dTip = Math.sqrt(Math.pow(lm[tipIdx].x-lm[0].x,2) + Math.pow(lm[tipIdx].y-lm[0].y,2));
+            const dPip = Math.sqrt(Math.pow(lm[pipIdx].x-lm[0].x,2) + Math.pow(lm[pipIdx].y-lm[0].y,2));
+            return dTip < (dPip * 1.2);
+        }
+
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                CONF.handDetected = true;
+                videoElement.classList.add('active');
+                const lm = results.multiHandLandmarks[0];
+                
+                const targetX = (0.5 - lm[9].x) * 80;
+                const targetY = (0.5 - lm[9].y) * 60;
+                const handSize = Math.sqrt(Math.pow(lm[0].x - lm[9].x, 2) + Math.pow(lm[0].y - lm[9].y, 2));
+                const targetZ = (handSize - 0.2) * -100; 
+                CONF.handPosition.lerp(new THREE.Vector3(targetX, targetY, targetZ), 0.2);
+
+                const iF = isFingerFolded(lm, 8, 6);  
+                const mF = isFingerFolded(lm, 12, 10); 
+                const rF = isFingerFolded(lm, 16, 14); 
+                const pF = isFingerFolded(lm, 20, 18); 
+                
+                let newState = "open";
+                let statusText = "gestur terbuka";
+                let statusColor = "#ff99cc";
+
+                if (iF && mF && rF && pF) {
+                    newState = "heart"; statusText = "gestur tertutup"; statusColor = "#ff0000";
+                } else if (!iF && !mF && rF && pF) {
+                    newState = "text"; statusText = "gestur 2 jari"; statusColor = "#ff99cc";
+                }
+                
+                currentGesture = newState;
+                statusElement.innerText = statusText; statusElement.style.color = statusColor;
+            } else {
+                CONF.handDetected = false;
+                videoElement.classList.remove('active');
+                currentGesture = "idle";
+                statusElement.innerText = "tidak ada gestur";
+                statusElement.style.color = "#ffffff";
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => { return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`; }});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 480, height: 360 });
+        cameraUtils.start();
+
+        window.addEventListener('resize', () => { 
+            camera.aspect = window.innerWidth / window.innerHeight; 
+            camera.updateProjectionMatrix(); 
+            renderer.setSize(window.innerWidth, window.innerHeight); 
+        });
+    </script>
+</body>
+</html>
